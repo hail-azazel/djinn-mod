@@ -1,9 +1,5 @@
-# Example Mod
+# Djinn Origin
 
-## Setup
+Fabric 1.20.1 mod that implements the Djinn kit in Java. Origins is treated as an activation/compat layer only; the gameplay powers, lamp, wishes, particles, and persistence live in the mod.
 
-For setup instructions, please see the [Fabric Documentation page](https://docs.fabricmc.net/develop/getting-started/creating-a-project#setting-up) related to the IDE that you are using.
-
-## License
-
-This template is available under the CC0 license. Feel free to learn from it and incorporate it in your own projects.
+Use `/djinn bind <player>` to mark a player as a Djinn in worlds that do not provide an Origins activation hook.

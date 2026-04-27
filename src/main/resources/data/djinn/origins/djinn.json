@@ -1,0 +1,14 @@
+{
+  "name": "Djinn",
+  "description": "A lamp-bound spirit of sand and wishes. The Origins selection only activates the Djinn; all powers are implemented by the Djinn Origin mod.",
+  "icon": {
+    "item": "djinn:magic_lamp"
+  },
+  "impact": 3,
+  "order": 40,
+  "powers": [
+    "djinn:bind_on_choose",
+    "djinn:sand_form",
+    "djinn:desert_dive_toggle"
+  ]
+}

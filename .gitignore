@@ -1,40 +1,17 @@
-# gradle
-
+# Gradle
 .gradle/
 build/
-out/
-classes/
-
-# eclipse
-
-*.launch
-
-# idea
-
-.idea/
-*.iml
-*.ipr
-*.iws
-
-# vscode
-
-.settings/
+# VSCode
 .vscode/
-bin/
-.classpath
-.project
-
-# macos
-
-*.DS_Store
-
-# fabric
-
+# IDEA
+.idea/
+out/
+*.iml
+# Runs
 run/
-
-# java
-
-hs_err_*.log
-replay_*.log
-*.hprof
-*.jfr
+runs/
+# Other
+.DS_Store
+*.log
+/fabric.mod.json.bak
+/yarn.lock.bak

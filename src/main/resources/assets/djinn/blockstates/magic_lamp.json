@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "djinn:block/magic_lamp"
+    }
+  }
+}

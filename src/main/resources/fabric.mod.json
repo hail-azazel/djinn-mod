@@ -1,38 +1,33 @@
 {
 	"schemaVersion": 1,
-	"id": "modid",
+	"id": "djinn",
 	"version": "${version}",
-	"name": "Example Mod",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "Djinn Origin",
+	"description": "A Java-first Origins companion that turns selected players into lamp-bound djinn without datapack powers.",
 	"authors": [
-		"Me!"
+		"Azazel",
+		"Codex"
 	],
-	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
-	},
-	"license": "CC0-1.0",
-	"icon": "assets/modid/icon.png",
+	"license": "MIT",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"com.example.ExampleMod"
+			"com.djinn.DjinnOriginMod"
 		],
 		"client": [
-			"com.example.client.ExampleModClient"
+			"com.djinn.DjinnOriginModClient"
 		]
 	},
 	"mixins": [
-		"modid.mixins.json",
-		{
-			"config": "modid.client.mixins.json",
-			"environment": "client"
-		}
+		"djinn.mixins.json"
 	],
 	"depends": {
-		"fabricloader": ">=0.19.2",
-		"minecraft": "~26.1.2",
-		"java": ">=25",
-		"fabric-api": "*"
+		"fabricloader": ">=0.15.0",
+		"fabric-api": "*",
+		"minecraft": "1.20.1",
+		"java": ">=17"
+	},
+	"suggests": {
+		"origins": ">=1.10.0"
 	}
 }

@@ -1,0 +1,16 @@
+{
+  "name": "Desert Dive",
+  "description": "Use the secondary active power key to toggle desert dive.",
+  "type": "origins:active_self",
+  "entity_action": {
+    "type": "origins:execute_command",
+    "command": "djinn desert_dive"
+  },
+  "cooldown": 20,
+  "key": {
+    "key": "key.origins.secondary_active"
+  },
+  "hud_render": {
+    "should_render": false
+  }
+}
