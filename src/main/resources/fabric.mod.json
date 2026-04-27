@@ -15,7 +15,7 @@
 			"com.djinn.DjinnOriginMod"
 		],
 		"client": [
-			"com.djinn.DjinnOriginModClient"
+			"com.djinn.client.DjinnOriginModClient"
 		]
 	},
 	"mixins": [

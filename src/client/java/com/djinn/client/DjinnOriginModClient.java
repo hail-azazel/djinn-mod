@@ -23,7 +23,7 @@ public class DjinnOriginModClient implements ClientModInitializer {
 	public void onInitializeClient() {
 		ParticleFactoryRegistry.getInstance().register(ModParticles.SANDSTORM, SandstormParticle.Factory::new);
 		ParticleFactoryRegistry.getInstance().register(ModParticles.GOLDEN_SMOKE, GoldenSmokeParticle.Factory::new);
-		BlockRenderLayerMap.INSTANCE.putBlock(ModBlocks.MAGIC_LAMP_BLOCK, RenderLayer.getTranslucent());
+		BlockRenderLayerMap.INSTANCE.putBlock(ModBlocks.MAGIC_LAMP_BLOCK, RenderLayer.getCutout());
 		DjinnTornadoRenderer.register();
 		MagicLampVisageRenderer.register();
 		ItemTooltipCallback.EVENT.register((stack, context, lines) -> {
