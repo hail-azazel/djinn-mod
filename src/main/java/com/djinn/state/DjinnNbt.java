@@ -1,10 +1,13 @@
 package com.djinn.state;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 public final class DjinnNbt {
 	public static final String OWNER = "DjinnOwner";
@@ -16,38 +19,48 @@ public final class DjinnNbt {
 	}
 
 	public static Optional<UUID> owner(ItemStack stack) {
-		NbtCompound nbt = stack.getNbt();
-		return nbt != null && nbt.containsUuid(OWNER) ? Optional.of(nbt.getUuid(OWNER)) : Optional.empty();
+		CompoundTag tag = tag(stack);
+		return tag.hasUUID(OWNER) ? Optional.of(tag.getUUID(OWNER)) : Optional.empty();
 	}
 
 	public static void owner(ItemStack stack, UUID owner) {
-		stack.getOrCreateNbt().putUuid(OWNER, owner);
+		update(stack, tag -> tag.putUUID(OWNER, owner));
 	}
 
 	public static String ownerName(ItemStack stack) {
-		NbtCompound nbt = stack.getNbt();
-		return nbt != null && nbt.contains(OWNER_NAME) ? nbt.getString(OWNER_NAME) : "";
+		CompoundTag tag = tag(stack);
+		return tag.contains(OWNER_NAME) ? tag.getString(OWNER_NAME) : "";
 	}
 
 	public static void ownerName(ItemStack stack, String ownerName) {
-		stack.getOrCreateNbt().putString(OWNER_NAME, ownerName);
+		update(stack, tag -> tag.putString(OWNER_NAME, ownerName));
 	}
 
 	public static Optional<UUID> master(ItemStack stack) {
-		NbtCompound nbt = stack.getNbt();
-		return nbt != null && nbt.containsUuid(MASTER) ? Optional.of(nbt.getUuid(MASTER)) : Optional.empty();
+		CompoundTag tag = tag(stack);
+		return tag.hasUUID(MASTER) ? Optional.of(tag.getUUID(MASTER)) : Optional.empty();
 	}
 
 	public static void master(ItemStack stack, UUID master) {
-		stack.getOrCreateNbt().putUuid(MASTER, master);
+		update(stack, tag -> tag.putUUID(MASTER, master));
 	}
 
 	public static int wishesUsed(ItemStack stack) {
-		NbtCompound nbt = stack.getNbt();
-		return nbt == null ? 0 : nbt.getInt(WISHES_USED);
+		return tag(stack).getInt(WISHES_USED);
 	}
 
 	public static void wishesUsed(ItemStack stack, int wishesUsed) {
-		stack.getOrCreateNbt().putInt(WISHES_USED, wishesUsed);
+		update(stack, tag -> tag.putInt(WISHES_USED, wishesUsed));
+	}
+
+	private static CompoundTag tag(ItemStack stack) {
+		CustomData customData = stack.get(DataComponents.CUSTOM_DATA);
+		return customData == null ? new CompoundTag() : customData.copyTag();
+	}
+
+	private static void update(ItemStack stack, Consumer<CompoundTag> updater) {
+		CompoundTag tag = tag(stack);
+		updater.accept(tag);
+		stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
 	}
 }

@@ -6,98 +6,104 @@ import com.djinn.particle.ModParticles;
 import com.djinn.state.DjinnNbt;
 import com.djinn.state.DjinnPlayerData;
 import com.djinn.state.DjinnWorldState;
-import net.minecraft.block.Block;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemUsageContext;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.TypedActionResult;
-import net.minecraft.world.World;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.RelativeMovement;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public class MagicLampItem extends BlockItem {
-	public MagicLampItem(Block block, Settings settings) {
-		super(block, settings);
+	public MagicLampItem(Block block, Properties properties) {
+		super(block, properties);
 	}
 
 	@Override
-	public TypedActionResult<ItemStack> use(World world, net.minecraft.entity.player.PlayerEntity user, Hand hand) {
-		ItemStack stack = user.getStackInHand(hand);
-		if (!(user instanceof ServerPlayerEntity player)) {
-			return TypedActionResult.success(stack);
+	public InteractionResultHolder<ItemStack> use(Level level, Player user, InteractionHand hand) {
+		ItemStack stack = user.getItemInHand(hand);
+		if (!(user instanceof ServerPlayer player)) {
+			return InteractionResultHolder.success(stack);
 		}
 		Optional<UUID> ownerId = DjinnNbt.owner(stack);
 		if (ownerId.isEmpty()) {
-			DjinnPlayerData data = DjinnWorldState.get(player.getServer()).player(player.getUuid());
+			DjinnPlayerData data = DjinnWorldState.get(player.getServer()).player(player.getUUID());
 			if (data.isDjinn()) {
-				DjinnNbt.owner(stack, player.getUuid());
+				DjinnNbt.owner(stack, player.getUUID());
 				DjinnNbt.ownerName(stack, player.getGameProfile().getName());
 				DjinnLampStacks.applyLampRules(stack);
-				world.playSound(null, player.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.PLAYERS, 0.75F, 1.6F);
-				world.playSound(null, player.getBlockPos(), SoundEvents.ITEM_ARMOR_EQUIP_GOLD, SoundCategory.PLAYERS, 0.5F, 1.15F);
-				player.sendMessage(Text.translatable("message.djinn.lamp_bound"), true);
-				return TypedActionResult.success(stack);
+				level.playSound(null, player.blockPosition(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.75F, 1.6F);
+				level.playSound(null, player.blockPosition(), SoundEvents.ARMOR_EQUIP_GOLD.value(), SoundSource.PLAYERS, 0.5F, 1.15F);
+				player.displayClientMessage(Component.translatable("message.djinn.lamp_bound"), true);
+				return InteractionResultHolder.success(stack);
 			}
-			return TypedActionResult.pass(stack);
+			return InteractionResultHolder.pass(stack);
 		}
-		ServerPlayerEntity djinn = player.getServer().getPlayerManager().getPlayer(ownerId.get());
+		ServerPlayer djinn = player.getServer().getPlayerList().getPlayer(ownerId.get());
 		if (djinn == null) {
-			world.playSound(null, player.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.55F, 0.55F);
-			player.sendMessage(Text.translatable("message.djinn.owner_offline"), true);
-			return TypedActionResult.fail(stack);
+			level.playSound(null, player.blockPosition(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.55F, 0.55F);
+			player.displayClientMessage(Component.translatable("message.djinn.owner_offline"), true);
+			return InteractionResultHolder.fail(stack);
 		}
-		if (djinn.getUuid().equals(player.getUuid())) {
-			return TypedActionResult.pass(stack);
+		if (djinn.getUUID().equals(player.getUUID())) {
+			return InteractionResultHolder.pass(stack);
 		}
-		DjinnNbt.master(stack, player.getUuid());
+		DjinnNbt.master(stack, player.getUUID());
 		DjinnWorldState state = DjinnWorldState.get(player.getServer());
-		DjinnPlayerData djinnData = state.player(djinn.getUuid());
-		djinnData.setLampMaster(player.getUuid());
-		state.markDirty();
-		ServerWorld targetWorld = player.getServerWorld();
-		djinn.teleport(targetWorld, player.getX(), player.getY(), player.getZ(), player.getYaw(), player.getPitch());
-		targetWorld.spawnParticles(ModParticles.GOLDEN_SMOKE, player.getX(), player.getBodyY(0.5), player.getZ(), 48, 0.55, 0.75, 0.55, 0.025);
-		targetWorld.playSound(null, player.getBlockPos(), SoundEvents.ENTITY_ENDERMAN_TELEPORT, SoundCategory.PLAYERS, 0.75F, 1.35F);
-		targetWorld.playSound(null, player.getBlockPos(), SoundEvents.ENTITY_ILLUSIONER_CAST_SPELL, SoundCategory.PLAYERS, 0.65F, 0.85F);
-		djinn.getServerWorld().playSound(null, djinn.getBlockPos(), SoundEvents.ENTITY_ENDERMAN_TELEPORT, SoundCategory.PLAYERS, 0.65F, 0.75F);
-		player.sendMessage(Text.translatable("message.djinn.summoned"), true);
+		DjinnPlayerData djinnData = state.player(djinn.getUUID());
+		djinnData.setLampMaster(player.getUUID());
+		state.setDirty();
+		ServerLevel targetWorld = player.serverLevel();
+		djinn.teleportTo(targetWorld, player.getX(), player.getY(), player.getZ(), Set.of(), player.getYRot(), player.getXRot());
+		targetWorld.sendParticles(ModParticles.GOLDEN_SMOKE.get(), player.getX(), player.getY(0.5), player.getZ(), 48, 0.55, 0.75, 0.55, 0.025);
+		targetWorld.playSound(null, player.blockPosition(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.75F, 1.35F);
+		targetWorld.playSound(null, player.blockPosition(), SoundEvents.ILLUSIONER_CAST_SPELL, SoundSource.PLAYERS, 0.65F, 0.85F);
+		djinn.serverLevel().playSound(null, djinn.blockPosition(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.65F, 0.75F);
+		player.displayClientMessage(Component.translatable("message.djinn.summoned"), true);
 		DjinnNetworking.openWishMenu(player, djinnData);
-		return TypedActionResult.success(stack);
+		return InteractionResultHolder.success(stack);
 	}
 
 	@Override
-	protected boolean postPlacement(net.minecraft.util.math.BlockPos pos, World world, net.minecraft.entity.player.PlayerEntity player, ItemStack stack, net.minecraft.block.BlockState state) {
-		boolean placed = super.postPlacement(pos, world, player, stack, state);
-		if (!world.isClient && world.getBlockEntity(pos) instanceof MagicLampBlockEntity lamp) {
-			lamp.readFromStack(stack);
+	protected boolean placeBlock(BlockPlaceContext context, BlockState state) {
+		boolean placed = super.placeBlock(context, state);
+		Level level = context.getLevel();
+		if (!level.isClientSide && level.getBlockEntity(context.getClickedPos()) instanceof MagicLampBlockEntity lamp) {
+			lamp.readFromStack(context.getItemInHand());
 		}
 		return placed;
 	}
 
 	@Override
-	public ActionResult useOnBlock(ItemUsageContext context) {
-		if (context.getPlayer() instanceof ServerPlayerEntity player) {
-			ItemStack stack = context.getStack();
-			DjinnPlayerData data = DjinnWorldState.get(player.getServer()).player(player.getUuid());
+	public InteractionResult useOn(UseOnContext context) {
+		if (context.getPlayer() instanceof ServerPlayer player) {
+			ItemStack stack = context.getItemInHand();
+			DjinnPlayerData data = DjinnWorldState.get(player.getServer()).player(player.getUUID());
 			Optional<UUID> owner = DjinnNbt.owner(stack);
-			if (!data.isDjinn() || owner.map(id -> !id.equals(player.getUuid())).orElse(false)) {
-				if (owner.isPresent() && !owner.get().equals(player.getUuid())) {
-					return use(context.getWorld(), player, context.getHand()).getResult();
+			if (!data.isDjinn() || owner.map(id -> !id.equals(player.getUUID())).orElse(false)) {
+				if (owner.isPresent() && !owner.get().equals(player.getUUID())) {
+					return use(context.getLevel(), player, context.getHand()).getResult();
 				}
-				context.getWorld().playSound(null, context.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.35F, 0.65F);
-				player.sendMessage(Text.translatable("message.djinn.lamp_only_djinn_place"), true);
-				return ActionResult.FAIL;
+				context.getLevel().playSound(null, context.getClickedPos(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.35F, 0.65F);
+				player.displayClientMessage(Component.translatable("message.djinn.lamp_only_djinn_place"), true);
+				return InteractionResult.FAIL;
 			}
 			DjinnLampStacks.applyLampRules(stack);
 		}
-		return super.useOnBlock(context);
+		return super.useOn(context);
 	}
 }

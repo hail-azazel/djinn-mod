@@ -1,7 +1,7 @@
 package com.djinn.state;
 
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 
 import java.util.UUID;
 
@@ -20,40 +20,40 @@ public class DjinnPlayerData {
 		this.playerId = playerId;
 	}
 
-	public static DjinnPlayerData fromNbt(UUID playerId, NbtCompound nbt) {
+	public static DjinnPlayerData fromNbt(UUID playerId, CompoundTag tag) {
 		DjinnPlayerData data = new DjinnPlayerData(playerId);
-		data.djinn = nbt.getBoolean("Djinn");
-		data.lampWorld = nbt.contains("LampWorld") ? nbt.getString("LampWorld") : null;
-		if (nbt.contains("LampX")) {
-			data.lampPos = new BlockPos(nbt.getInt("LampX"), nbt.getInt("LampY"), nbt.getInt("LampZ"));
+		data.djinn = tag.getBoolean("Djinn");
+		data.lampWorld = tag.contains("LampWorld") ? tag.getString("LampWorld") : null;
+		if (tag.contains("LampX")) {
+			data.lampPos = new BlockPos(tag.getInt("LampX"), tag.getInt("LampY"), tag.getInt("LampZ"));
 		}
-		if (nbt.containsUuid("LampMaster")) {
-			data.lampMaster = nbt.getUuid("LampMaster");
+		if (tag.hasUUID("LampMaster")) {
+			data.lampMaster = tag.getUUID("LampMaster");
 		}
-		data.wishesUsed = nbt.getInt("WishesUsed");
-		data.sandFormTicks = nbt.getInt("SandFormTicks");
-		data.desertDiveToggled = !nbt.contains("DesertDiveToggled") || nbt.getBoolean("DesertDiveToggled");
-		data.pendingLampReturn = nbt.getBoolean("PendingLampReturn");
+		data.wishesUsed = tag.getInt("WishesUsed");
+		data.sandFormTicks = tag.getInt("SandFormTicks");
+		data.desertDiveToggled = !tag.contains("DesertDiveToggled") || tag.getBoolean("DesertDiveToggled");
+		data.pendingLampReturn = tag.getBoolean("PendingLampReturn");
 		return data;
 	}
 
-	public NbtCompound toNbt() {
-		NbtCompound nbt = new NbtCompound();
-		nbt.putBoolean("Djinn", djinn);
+	public CompoundTag toNbt() {
+		CompoundTag tag = new CompoundTag();
+		tag.putBoolean("Djinn", djinn);
 		if (lampWorld != null && lampPos != null) {
-			nbt.putString("LampWorld", lampWorld);
-			nbt.putInt("LampX", lampPos.getX());
-			nbt.putInt("LampY", lampPos.getY());
-			nbt.putInt("LampZ", lampPos.getZ());
+			tag.putString("LampWorld", lampWorld);
+			tag.putInt("LampX", lampPos.getX());
+			tag.putInt("LampY", lampPos.getY());
+			tag.putInt("LampZ", lampPos.getZ());
 		}
 		if (lampMaster != null) {
-			nbt.putUuid("LampMaster", lampMaster);
+			tag.putUUID("LampMaster", lampMaster);
 		}
-		nbt.putInt("WishesUsed", wishesUsed);
-		nbt.putInt("SandFormTicks", sandFormTicks);
-		nbt.putBoolean("DesertDiveToggled", desertDiveToggled);
-		nbt.putBoolean("PendingLampReturn", pendingLampReturn);
-		return nbt;
+		tag.putInt("WishesUsed", wishesUsed);
+		tag.putInt("SandFormTicks", sandFormTicks);
+		tag.putBoolean("DesertDiveToggled", desertDiveToggled);
+		tag.putBoolean("PendingLampReturn", pendingLampReturn);
+		return tag;
 	}
 
 	public UUID playerId() {

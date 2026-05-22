@@ -2,24 +2,29 @@ package com.djinn.item;
 
 import com.djinn.DjinnOriginMod;
 import com.djinn.block.ModBlocks;
-import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
-import net.fabricmc.fabric.api.item.v1.FabricItemSettings;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroups;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.Item;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 public final class ModItems {
-	public static final Item SANDSTORM_BOTTLE = new SandstormBottleItem(new FabricItemSettings().maxCount(1));
+	public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(DjinnOriginMod.MOD_ID);
+	public static final DeferredItem<Item> SANDSTORM_BOTTLE = ITEMS.registerItem("sandstorm_bottle", SandstormBottleItem::new, new Item.Properties().stacksTo(1));
 
 	private ModItems() {
 	}
 
-	public static void register() {
-		Registry.register(Registries.ITEM, DjinnOriginMod.id("sandstorm_bottle"), SANDSTORM_BOTTLE);
-		ItemGroupEvents.modifyEntriesEvent(ItemGroups.FUNCTIONAL).register(entries -> {
-			entries.add(ModBlocks.MAGIC_LAMP);
-			entries.add(SANDSTORM_BOTTLE);
-		});
+	public static void register(IEventBus bus) {
+		ITEMS.register(bus);
+		bus.addListener(ModItems::addCreativeTabItems);
+	}
+
+	private static void addCreativeTabItems(BuildCreativeModeTabContentsEvent event) {
+		if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
+			event.accept(ModBlocks.MAGIC_LAMP);
+			event.accept(SANDSTORM_BOTTLE);
+		}
 	}
 }

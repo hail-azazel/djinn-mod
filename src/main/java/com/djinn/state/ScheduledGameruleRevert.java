@@ -1,21 +1,21 @@
 package com.djinn.state;
 
-import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.CompoundTag;
 
 public record ScheduledGameruleRevert(String rule, String previousValue, long executeAt) {
-	public static ScheduledGameruleRevert fromNbt(NbtCompound nbt) {
+	public static ScheduledGameruleRevert fromNbt(CompoundTag tag) {
 		return new ScheduledGameruleRevert(
-				nbt.getString("Rule"),
-				nbt.getString("PreviousValue"),
-				nbt.getLong("ExecuteAt")
+				tag.getString("Rule"),
+				tag.getString("PreviousValue"),
+				tag.getLong("ExecuteAt")
 		);
 	}
 
-	public NbtCompound toNbt() {
-		NbtCompound nbt = new NbtCompound();
-		nbt.putString("Rule", rule);
-		nbt.putString("PreviousValue", previousValue);
-		nbt.putLong("ExecuteAt", executeAt);
-		return nbt;
+	public CompoundTag toNbt() {
+		CompoundTag tag = new CompoundTag();
+		tag.putString("Rule", rule);
+		tag.putString("PreviousValue", previousValue);
+		tag.putLong("ExecuteAt", executeAt);
+		return tag;
 	}
 }

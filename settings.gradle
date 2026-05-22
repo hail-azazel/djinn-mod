@@ -1,28 +1,12 @@
 pluginManagement {
 	repositories {
 		maven {
-			name = "Fabric"
-			url = "https://maven.fabricmc.net/"
-		}
-		maven {
-			name = "Ladysnake"
-			url = "https://maven.ladysnake.org/releases"
-		}
-		maven {
-			name = "Shedaniel"
-			url = "https://maven.shedaniel.me/"
-		}
-		maven {
-			name = "Terraformers"
-			url = "https://maven.terraformersmc.com/releases/"
-		}
-		maven {
-			name = "JamiesWhiteShirt"
-			url = "https://maven.jamieswhiteshirt.com/libs-release/"
+			name = 'NeoForge'
+			url = 'https://maven.neoforged.net/releases'
 		}
 		mavenCentral()
 		gradlePluginPortal()
 	}
 }
 
-rootProject.name = "djinn_origin"
+rootProject.name = 'djinn_origin'

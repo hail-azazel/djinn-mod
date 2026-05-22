@@ -1,11 +1,12 @@
 package com.djinn.state;
 
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtList;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateManager;
-import net.minecraft.world.World;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,25 +14,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public class DjinnWorldState extends PersistentState {
+public class DjinnWorldState extends SavedData {
 	private static final String KEY = "djinn_state";
 	private final Map<UUID, DjinnPlayerData> players = new HashMap<>();
 	private final List<ScheduledGameruleRevert> gameruleReverts = new ArrayList<>();
 
 	public static DjinnWorldState get(MinecraftServer server) {
-		PersistentStateManager manager = server.getWorld(World.OVERWORLD).getPersistentStateManager();
-		return manager.getOrCreate(DjinnWorldState::fromNbt, DjinnWorldState::new, KEY);
+		return server.getLevel(Level.OVERWORLD).getDataStorage().computeIfAbsent(
+				new SavedData.Factory<>(DjinnWorldState::new, DjinnWorldState::fromNbt, null),
+				KEY
+		);
 	}
 
-	public static DjinnWorldState fromNbt(NbtCompound nbt) {
+	public static DjinnWorldState fromNbt(CompoundTag tag, HolderLookup.Provider registries) {
 		DjinnWorldState state = new DjinnWorldState();
-		NbtList playersNbt = nbt.getList("Players", NbtCompound.COMPOUND_TYPE);
+		ListTag playersNbt = tag.getList("Players", Tag.TAG_COMPOUND);
 		for (int i = 0; i < playersNbt.size(); i++) {
-			NbtCompound entry = playersNbt.getCompound(i);
-			UUID id = entry.getUuid("Id");
+			CompoundTag entry = playersNbt.getCompound(i);
+			UUID id = entry.getUUID("Id");
 			state.players.put(id, DjinnPlayerData.fromNbt(id, entry.getCompound("Data")));
 		}
-		NbtList revertsNbt = nbt.getList("GameruleReverts", NbtCompound.COMPOUND_TYPE);
+		ListTag revertsNbt = tag.getList("GameruleReverts", Tag.TAG_COMPOUND);
 		for (int i = 0; i < revertsNbt.size(); i++) {
 			state.gameruleReverts.add(ScheduledGameruleRevert.fromNbt(revertsNbt.getCompound(i)));
 		}
@@ -39,22 +42,22 @@ public class DjinnWorldState extends PersistentState {
 	}
 
 	@Override
-	public NbtCompound writeNbt(NbtCompound nbt) {
-		NbtList playersNbt = new NbtList();
+	public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+		ListTag playersNbt = new ListTag();
 		for (Map.Entry<UUID, DjinnPlayerData> entry : players.entrySet()) {
-			NbtCompound playerNbt = new NbtCompound();
-			playerNbt.putUuid("Id", entry.getKey());
+			CompoundTag playerNbt = new CompoundTag();
+			playerNbt.putUUID("Id", entry.getKey());
 			playerNbt.put("Data", entry.getValue().toNbt());
 			playersNbt.add(playerNbt);
 		}
-		nbt.put("Players", playersNbt);
+		tag.put("Players", playersNbt);
 
-		NbtList revertsNbt = new NbtList();
+		ListTag revertsNbt = new ListTag();
 		for (ScheduledGameruleRevert revert : gameruleReverts) {
 			revertsNbt.add(revert.toNbt());
 		}
-		nbt.put("GameruleReverts", revertsNbt);
-		return nbt;
+		tag.put("GameruleReverts", revertsNbt);
+		return tag;
 	}
 
 	public DjinnPlayerData player(UUID playerId) {

@@ -1,16 +1,17 @@
 package com.djinn.block;
 
-import com.djinn.state.DjinnNbt;
 import com.djinn.item.DjinnLampStacks;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.listener.ClientPlayPacketListener;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.util.math.BlockPos;
+import com.djinn.state.DjinnNbt;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -22,7 +23,7 @@ public class MagicLampBlockEntity extends BlockEntity {
 	private int wishesUsed;
 
 	public MagicLampBlockEntity(BlockPos pos, BlockState state) {
-		super(ModBlocks.MAGIC_LAMP_BLOCK_ENTITY, pos, state);
+		super(ModBlocks.MAGIC_LAMP_BLOCK_ENTITY.get(), pos, state);
 	}
 
 	public Optional<UUID> owner() {
@@ -62,9 +63,9 @@ public class MagicLampBlockEntity extends BlockEntity {
 	}
 
 	private void sync() {
-		markDirty();
-		if (world != null) {
-			world.updateListeners(pos, getCachedState(), getCachedState(), Block.NOTIFY_LISTENERS);
+		setChanged();
+		if (level != null) {
+			level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
 		}
 	}
 
@@ -79,7 +80,7 @@ public class MagicLampBlockEntity extends BlockEntity {
 	}
 
 	public ItemStack asStack() {
-		ItemStack stack = new ItemStack(ModBlocks.MAGIC_LAMP);
+		ItemStack stack = new ItemStack(ModBlocks.MAGIC_LAMP.get());
 		if (owner != null) {
 			DjinnNbt.owner(stack, owner);
 		}
@@ -95,36 +96,45 @@ public class MagicLampBlockEntity extends BlockEntity {
 	}
 
 	@Override
-	protected void writeNbt(NbtCompound nbt) {
-		super.writeNbt(nbt);
+	protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+		super.saveAdditional(tag, registries);
 		if (owner != null) {
-			nbt.putUuid("Owner", owner);
+			tag.putUUID("Owner", owner);
 		}
 		if (!ownerName.isBlank()) {
-			nbt.putString("OwnerName", ownerName);
+			tag.putString("OwnerName", ownerName);
 		}
 		if (master != null) {
-			nbt.putUuid("Master", master);
+			tag.putUUID("Master", master);
 		}
-		nbt.putInt("WishesUsed", wishesUsed);
+		tag.putInt("WishesUsed", wishesUsed);
 	}
 
 	@Override
-	public void readNbt(NbtCompound nbt) {
-		super.readNbt(nbt);
-		owner = nbt.containsUuid("Owner") ? nbt.getUuid("Owner") : null;
-		ownerName = nbt.contains("OwnerName") ? nbt.getString("OwnerName") : "";
-		master = nbt.containsUuid("Master") ? nbt.getUuid("Master") : null;
-		wishesUsed = nbt.getInt("WishesUsed");
+	protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+		super.loadAdditional(tag, registries);
+		owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
+		ownerName = tag.contains("OwnerName") ? tag.getString("OwnerName") : "";
+		master = tag.hasUUID("Master") ? tag.getUUID("Master") : null;
+		wishesUsed = tag.getInt("WishesUsed");
+	}
+
+	@Nullable
+	@Override
+	public ClientboundBlockEntityDataPacket getUpdatePacket() {
+		return ClientboundBlockEntityDataPacket.create(this);
 	}
 
 	@Override
-	public Packet<ClientPlayPacketListener> toUpdatePacket() {
-		return BlockEntityUpdateS2CPacket.create(this);
+	public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+		return saveWithoutMetadata(registries);
 	}
 
 	@Override
-	public NbtCompound toInitialChunkDataNbt() {
-		return createNbt();
+	public void onDataPacket(Connection net, ClientboundBlockEntityDataPacket pkt, HolderLookup.Provider registries) {
+		CompoundTag tag = pkt.getTag();
+		if (tag != null) {
+			loadAdditional(tag, registries);
+		}
 	}
 }

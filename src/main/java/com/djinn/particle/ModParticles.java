@@ -1,20 +1,22 @@
 package com.djinn.particle;
 
 import com.djinn.DjinnOriginMod;
-import net.fabricmc.fabric.api.particle.v1.FabricParticleTypes;
-import net.minecraft.particle.DefaultParticleType;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.particles.SimpleParticleType;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 public final class ModParticles {
-	public static final DefaultParticleType SANDSTORM = FabricParticleTypes.simple();
-	public static final DefaultParticleType GOLDEN_SMOKE = FabricParticleTypes.simple();
+	public static final DeferredRegister<ParticleType<?>> PARTICLE_TYPES = DeferredRegister.create(BuiltInRegistries.PARTICLE_TYPE, DjinnOriginMod.MOD_ID);
+	public static final DeferredHolder<ParticleType<?>, SimpleParticleType> SANDSTORM = PARTICLE_TYPES.register("sandstorm", () -> new SimpleParticleType(false));
+	public static final DeferredHolder<ParticleType<?>, SimpleParticleType> GOLDEN_SMOKE = PARTICLE_TYPES.register("golden_smoke", () -> new SimpleParticleType(false));
 
 	private ModParticles() {
 	}
 
-	public static void register() {
-		Registry.register(Registries.PARTICLE_TYPE, DjinnOriginMod.id("sandstorm"), SANDSTORM);
-		Registry.register(Registries.PARTICLE_TYPE, DjinnOriginMod.id("golden_smoke"), GOLDEN_SMOKE);
+	public static void register(IEventBus bus) {
+		PARTICLE_TYPES.register(bus);
 	}
 }

@@ -1,6 +1,7 @@
 plugins {
-	id "fabric-loom" version "${loom_version}"
-	id "maven-publish"
+	id 'java-library'
+	id 'maven-publish'
+	id 'net.neoforged.gradle.userdev' version '7.1.26'
 }
 
 version = project.mod_version
@@ -10,77 +11,83 @@ base {
 	archivesName = project.archives_base_name
 }
 
-repositories {
-	maven {
-		name = "Ladysnake"
-		url = "https://maven.ladysnake.org/releases"
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+runs {
+	configureEach {
+		systemProperty 'forge.logging.markers', 'REGISTRIES'
+		systemProperty 'forge.logging.console.level', 'debug'
+		workingDirectory project.layout.projectDirectory.dir('run').dir(name)
+		modSource project.sourceSets.main
 	}
-	maven {
-		name = "Shedaniel"
-		url = "https://maven.shedaniel.me/"
+
+	client {
+		systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
 	}
-	maven {
-		name = "Terraformers"
-		url = "https://maven.terraformersmc.com/releases/"
+
+	server {
+		systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+		argument '--nogui'
 	}
-	maven {
-		name = "JamiesWhiteShirt"
-		url = "https://maven.jamieswhiteshirt.com/libs-release/"
+
+	data {
+		arguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
 	}
 }
 
-loom {
-	splitEnvironmentSourceSets()
-
-	mods {
-		"djinn" {
-			sourceSet sourceSets.main
-			sourceSet sourceSets.client
-		}
+sourceSets.main {
+	java {
+		srcDir 'src/client/java'
 	}
+	resources {
+		srcDir 'src/generated/resources'
+		exclude 'src/generated/**/.cache'
+	}
+}
+
+repositories {
+	mavenCentral()
 }
 
 dependencies {
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-
-	if (project.findProperty("includeOriginsInDev") == "true") {
-		modRuntimeOnly "io.github.apace100:origins-fabric:${project.origins_version}"
-	}
+	implementation "net.neoforged:neoforge:${neo_version}"
 }
 
-processResources {
-	inputs.property "version", project.version
+tasks.withType(ProcessResources).configureEach {
+	def replaceProperties = [
+			minecraft_version      : minecraft_version,
+			minecraft_version_range: minecraft_version_range,
+			neo_version            : neo_version,
+			neo_version_range      : neo_version_range,
+			loader_version_range   : loader_version_range,
+			mod_id                 : mod_id,
+			mod_name               : mod_name,
+			mod_license            : mod_license,
+			mod_version            : mod_version,
+			mod_authors            : mod_authors,
+			mod_description        : mod_description
+	]
+	inputs.properties replaceProperties
 
-	filesMatching("fabric.mod.json") {
-		expand "version": inputs.properties.version
+	filesMatching(['META-INF/neoforge.mods.toml']) {
+		expand replaceProperties
 	}
 }
 
 tasks.withType(JavaCompile).configureEach {
-	options.release = 17
+	options.encoding = 'UTF-8'
+	options.release = 21
 }
 
 java {
 	withSourcesJar()
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
-	}
-	sourceCompatibility = JavaVersion.VERSION_17
-	targetCompatibility = JavaVersion.VERSION_17
-}
-
-tasks.withType(JavaExec).configureEach {
-	javaLauncher = javaToolchains.launcherFor {
-		languageVersion = JavaLanguageVersion.of(17)
-	}
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
 }
 
 publishing {
 	publications {
-		create("mavenJava", MavenPublication) {
+		register('mavenJava', MavenPublication) {
 			from components.java
 		}
 	}

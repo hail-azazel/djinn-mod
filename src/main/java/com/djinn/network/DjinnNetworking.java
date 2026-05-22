@@ -6,98 +6,111 @@ import com.djinn.state.DjinnPlayerData;
 import com.djinn.state.DjinnWorldState;
 import com.djinn.state.ScheduledGameruleRevert;
 import com.djinn.wish.DjinnWishBlacklist;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.registry.Registries;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.world.GameRules;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameRules;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import java.util.UUID;
 
 public final class DjinnNetworking {
-	public static final Identifier OPEN_WISH_MENU = DjinnOriginMod.id("open_wish_menu");
-	public static final Identifier MAKE_WISH = DjinnOriginMod.id("make_wish");
-	public static final Identifier DJINN_ORIGIN = DjinnOriginMod.id("djinn");
-	public static final Identifier HUMAN_ORIGIN = new Identifier("origins", "human");
+	public static final ResourceLocation DJINN_ORIGIN = DjinnOriginMod.id("djinn");
+	public static final ResourceLocation HUMAN_ORIGIN = ResourceLocation.fromNamespaceAndPath("origins", "human");
 	private static final long ONE_WEEK_MILLIS = 7L * 24L * 60L * 60L * 1000L;
 
 	private DjinnNetworking() {
 	}
 
-	public static void registerServerReceivers() {
-		ServerPlayNetworking.registerGlobalReceiver(MAKE_WISH, (server, player, handler, buf, responseSender) -> {
-			int wishType = buf.readVarInt();
-			Identifier itemId = wishType == 0 ? buf.readIdentifier() : null;
-			int count = wishType == 0 ? buf.readVarInt() : 1;
-			String gamerule = wishType == 3 ? buf.readString(64) : "";
-			String gameruleValue = wishType == 3 ? buf.readString(64) : "";
-			Identifier originId = wishType == 1 ? buf.readIdentifier() : null;
-			server.execute(() -> handleWish(player, wishType, itemId, count, gamerule, gameruleValue, originId));
-		});
+	public static void register(IEventBus bus) {
+		bus.addListener(DjinnNetworking::registerPayloads);
 	}
 
-	public static void openWishMenu(ServerPlayerEntity player, DjinnPlayerData djinn) {
-		PacketByteBuf buf = PacketByteBufs.create();
-		buf.writeVarInt(Math.max(0, 3 - djinn.wishesUsed()));
-		net.minecraft.nbt.NbtCompound rules = player.getServer().getGameRules().toNbt();
-		buf.writeNbt(rules);
-		ServerPlayNetworking.send(player, OPEN_WISH_MENU, buf);
+	private static void registerPayloads(RegisterPayloadHandlersEvent event) {
+		PayloadRegistrar registrar = event.registrar("1");
+		registrar.playToClient(OpenWishMenuPayload.TYPE, OpenWishMenuPayload.STREAM_CODEC, DjinnNetworking::handleOpenWishMenu);
+		registrar.playToServer(MakeWishPayload.TYPE, MakeWishPayload.STREAM_CODEC, DjinnNetworking::handleMakeWish);
 	}
 
-	private static void handleWish(ServerPlayerEntity master, int wishType, Identifier itemId, int count, String gamerule, String gameruleValue, Identifier originId) {
+	private static void handleOpenWishMenu(OpenWishMenuPayload payload, IPayloadContext context) {
+		if (FMLEnvironment.dist == Dist.CLIENT) {
+			context.enqueueWork(() -> com.djinn.client.DjinnOriginModClient.openWishMenu(payload.remainingWishes(), payload.gamerules()));
+		}
+	}
+
+	private static void handleMakeWish(MakeWishPayload payload, IPayloadContext context) {
+		if (context.player() instanceof ServerPlayer player) {
+			context.enqueueWork(() -> handleWish(player, payload.wishType(), payload.itemId(), payload.count(), payload.gamerule(), payload.gameruleValue(), payload.originId()));
+		}
+	}
+
+	public static void openWishMenu(ServerPlayer player, DjinnPlayerData djinn) {
+		CompoundTag rules = player.getServer().getGameRules().createTag();
+		PacketDistributor.sendToPlayer(player, new OpenWishMenuPayload(Math.max(0, 3 - djinn.wishesUsed()), rules));
+	}
+
+	private static void handleWish(ServerPlayer master, int wishType, ResourceLocation itemId, int count, String gamerule, String gameruleValue, ResourceLocation originId) {
 		ItemStack lamp = heldLamp(master);
 		if (lamp.isEmpty()) {
-			master.getWorld().playSound(null, master.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.45F, 0.55F);
-			master.sendMessage(Text.translatable("command.djinn.no_lamp"), true);
+			master.level().playSound(null, master.blockPosition(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.45F, 0.55F);
+			master.displayClientMessage(Component.translatable("command.djinn.no_lamp"), true);
 			return;
 		}
 		UUID djinnId = DjinnNbt.owner(lamp).orElse(null);
 		if (djinnId == null) {
-			master.getWorld().playSound(null, master.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.45F, 0.55F);
-			master.sendMessage(Text.translatable("command.djinn.unbound_lamp"), true);
+			master.level().playSound(null, master.blockPosition(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.45F, 0.55F);
+			master.displayClientMessage(Component.translatable("command.djinn.unbound_lamp"), true);
 			return;
 		}
 		DjinnWorldState worldState = DjinnWorldState.get(master.getServer());
 		DjinnPlayerData djinn = worldState.player(djinnId);
 		if (!djinn.isDjinn()) {
-			master.getWorld().playSound(null, master.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.45F, 0.55F);
-			master.sendMessage(Text.translatable("message.djinn.not_djinn"), true);
+			master.level().playSound(null, master.blockPosition(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.45F, 0.55F);
+			master.displayClientMessage(Component.translatable("message.djinn.not_djinn"), true);
 			return;
 		}
 		if (!djinn.canWish()) {
-			master.getWorld().playSound(null, master.getBlockPos(), SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.PLAYERS, 0.55F, 0.75F);
-			master.sendMessage(Text.translatable("command.djinn.no_wishes"), true);
+			master.level().playSound(null, master.blockPosition(), SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.55F, 0.75F);
+			master.displayClientMessage(Component.translatable("command.djinn.no_wishes"), true);
 			return;
 		}
 		if (!applyWish(master, wishType, itemId, count, gamerule, gameruleValue, originId)) {
-			master.getWorld().playSound(null, master.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.45F, 0.55F);
-			master.sendMessage(Text.translatable("message.djinn.wish_unknown"), true);
+			master.level().playSound(null, master.blockPosition(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.45F, 0.55F);
+			master.displayClientMessage(Component.translatable("message.djinn.wish_unknown"), true);
 			return;
 		}
 		djinn.spendWish();
-		djinn.setLampMaster(master.getUuid());
-		DjinnNbt.master(lamp, master.getUuid());
+		djinn.setLampMaster(master.getUUID());
+		DjinnNbt.master(lamp, master.getUUID());
 		DjinnNbt.wishesUsed(lamp, djinn.wishesUsed());
-		worldState.markDirty();
-		master.getWorld().playSound(null, master.getBlockPos(), SoundEvents.ENTITY_PLAYER_LEVELUP, SoundCategory.PLAYERS, 0.7F, 1.45F);
-		master.getWorld().playSound(null, master.getBlockPos(), SoundEvents.BLOCK_AMETHYST_CLUSTER_BREAK, SoundCategory.PLAYERS, 0.45F, 0.9F + djinn.wishesUsed() * 0.18F);
-		master.sendMessage(Text.translatable("message.djinn.wish_spent", 3 - djinn.wishesUsed()), true);
+		worldState.setDirty();
+		master.level().playSound(null, master.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 0.7F, 1.45F);
+		master.level().playSound(null, master.blockPosition(), SoundEvents.AMETHYST_CLUSTER_BREAK, SoundSource.PLAYERS, 0.45F, 0.9F + djinn.wishesUsed() * 0.18F);
+		master.displayClientMessage(Component.translatable("message.djinn.wish_spent", 3 - djinn.wishesUsed()), true);
 	}
 
-	private static boolean applyWish(ServerPlayerEntity master, int wishType, Identifier itemId, int count, String gameruleName, String gameruleValue, Identifier originId) {
+	private static boolean applyWish(ServerPlayer master, int wishType, ResourceLocation itemId, int count, String gameruleName, String gameruleValue, ResourceLocation originId) {
 		if (wishType == 0) {
-			if (itemId == null || !Registries.ITEM.containsId(itemId) || !DjinnWishBlacklist.itemAllowed(itemId)) {
+			if (itemId == null || !BuiltInRegistries.ITEM.containsKey(itemId) || !DjinnWishBlacklist.itemAllowed(itemId)) {
 				return false;
 			}
-			return give(master, new ItemStack(Registries.ITEM.get(itemId), Math.max(1, Math.min(64, count))));
+			return give(master, new ItemStack(BuiltInRegistries.ITEM.get(itemId), Math.max(1, Math.min(64, count))));
 		}
 		return switch (wishType) {
 			case 1 -> originId != null && DjinnWishBlacklist.originAllowed(originId) && changeOrigin(master, originId);
@@ -107,46 +120,46 @@ public final class DjinnNetworking {
 		};
 	}
 
-	private static boolean give(ServerPlayerEntity player, ItemStack stack) {
-		if (!player.getInventory().insertStack(stack)) {
-			player.dropItem(stack, false);
+	private static boolean give(ServerPlayer player, ItemStack stack) {
+		if (!player.getInventory().add(stack)) {
+			player.drop(stack, false);
 		}
-		player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.ITEM_ARMOR_EQUIP_GOLD, SoundCategory.PLAYERS, 0.55F, 1.4F);
+		player.level().playSound(null, player.blockPosition(), SoundEvents.ARMOR_EQUIP_GOLD.value(), SoundSource.PLAYERS, 0.55F, 1.4F);
 		return true;
 	}
 
-	private static boolean changeOrigin(ServerPlayerEntity player, Identifier originId) {
+	private static boolean changeOrigin(ServerPlayer player, ResourceLocation originId) {
 		if (originId.equals(DjinnOriginMod.id("djinn"))) {
-			DjinnWorldState.get(player.getServer()).player(player.getUuid()).setDjinn(true);
-			DjinnWorldState.get(player.getServer()).markDirty();
+			DjinnWorldState.get(player.getServer()).player(player.getUUID()).setDjinn(true);
+			DjinnWorldState.get(player.getServer()).setDirty();
 		}
-		if (FabricLoader.getInstance().isModLoaded("origins")) {
+		if (ModList.get().isLoaded("origins")) {
 			String command = "origin set " + player.getGameProfile().getName() + " origins:origin " + originId;
-			player.getServer().getCommandManager().executeWithPrefix(player.getServer().getCommandSource(), command);
+			player.getServer().getCommands().performPrefixedCommand(player.getServer().createCommandSourceStack(), command);
 		}
-		player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.ENTITY_ILLUSIONER_CAST_SPELL, SoundCategory.PLAYERS, 0.8F, 1.0F);
+		player.level().playSound(null, player.blockPosition(), SoundEvents.ILLUSIONER_CAST_SPELL, SoundSource.PLAYERS, 0.8F, 1.0F);
 		return true;
 	}
 
-	private static boolean gamerule(ServerPlayerEntity player, String rule, String value) {
+	private static boolean gamerule(ServerPlayer player, String rule, String value) {
 		if (rule == null || rule.isBlank() || value == null || value.isBlank() || !isKnownGamerule(rule) || !DjinnWishBlacklist.gameruleAllowed(rule)) {
 			return false;
 		}
-		String previousValue = player.getServer().getGameRules().toNbt().getString(rule);
-		player.getServer().getCommandManager().executeWithPrefix(player.getServer().getCommandSource(), "gamerule " + rule + " " + value);
+		String previousValue = player.getServer().getGameRules().createTag().getString(rule);
+		player.getServer().getCommands().performPrefixedCommand(player.getServer().createCommandSourceStack(), "gamerule " + rule + " " + value);
 		DjinnWorldState state = DjinnWorldState.get(player.getServer());
 		state.gameruleReverts().add(new ScheduledGameruleRevert(rule, previousValue, System.currentTimeMillis() + ONE_WEEK_MILLIS));
-		state.markDirty();
-		player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.BLOCK_BEACON_POWER_SELECT, SoundCategory.PLAYERS, 0.85F, 0.85F);
+		state.setDirty();
+		player.level().playSound(null, player.blockPosition(), SoundEvents.BEACON_POWER_SELECT, SoundSource.PLAYERS, 0.85F, 0.85F);
 		return true;
 	}
 
 	private static boolean isKnownGamerule(String rule) {
 		final boolean[] found = {false};
-		GameRules.accept(new GameRules.Visitor() {
+		GameRules.visitGameRuleTypes(new GameRules.GameRuleTypeVisitor() {
 			@Override
-			public <T extends GameRules.Rule<T>> void visit(GameRules.Key<T> key, GameRules.Type<T> type) {
-				if (key.getName().equals(rule)) {
+			public <T extends GameRules.Value<T>> void visit(GameRules.Key<T> key, GameRules.Type<T> type) {
+				if (key.getId().equals(rule)) {
 					found[0] = true;
 				}
 			}
@@ -154,12 +167,68 @@ public final class DjinnNetworking {
 		return found[0];
 	}
 
-	private static ItemStack heldLamp(ServerPlayerEntity player) {
-		ItemStack main = player.getMainHandStack();
-		if (DjinnNbt.owner(main).isPresent() && Registries.ITEM.getId(main.getItem()).equals(DjinnOriginMod.id("magic_lamp"))) {
+	private static ItemStack heldLamp(ServerPlayer player) {
+		ItemStack main = player.getMainHandItem();
+		if (DjinnNbt.owner(main).isPresent() && BuiltInRegistries.ITEM.getKey(main.getItem()).equals(DjinnOriginMod.id("magic_lamp"))) {
 			return main;
 		}
-		ItemStack off = player.getOffHandStack();
-		return DjinnNbt.owner(off).isPresent() && Registries.ITEM.getId(off.getItem()).equals(DjinnOriginMod.id("magic_lamp")) ? off : ItemStack.EMPTY;
+		ItemStack off = player.getOffhandItem();
+		return DjinnNbt.owner(off).isPresent() && BuiltInRegistries.ITEM.getKey(off.getItem()).equals(DjinnOriginMod.id("magic_lamp")) ? off : ItemStack.EMPTY;
+	}
+
+	public record OpenWishMenuPayload(int remainingWishes, CompoundTag gamerules) implements CustomPacketPayload {
+		public static final Type<OpenWishMenuPayload> TYPE = new Type<>(DjinnOriginMod.id("open_wish_menu"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, OpenWishMenuPayload> STREAM_CODEC = new StreamCodec<>() {
+			@Override
+			public OpenWishMenuPayload decode(RegistryFriendlyByteBuf buffer) {
+				return new OpenWishMenuPayload(buffer.readVarInt(), buffer.readNbt());
+			}
+
+			@Override
+			public void encode(RegistryFriendlyByteBuf buffer, OpenWishMenuPayload payload) {
+				buffer.writeVarInt(payload.remainingWishes());
+				buffer.writeNbt(payload.gamerules());
+			}
+		};
+
+		@Override
+		public Type<? extends CustomPacketPayload> type() {
+			return TYPE;
+		}
+	}
+
+	public record MakeWishPayload(int wishType, ResourceLocation itemId, int count, String gamerule, String gameruleValue, ResourceLocation originId) implements CustomPacketPayload {
+		public static final Type<MakeWishPayload> TYPE = new Type<>(DjinnOriginMod.id("make_wish"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, MakeWishPayload> STREAM_CODEC = new StreamCodec<>() {
+			@Override
+			public MakeWishPayload decode(RegistryFriendlyByteBuf buffer) {
+				int wishType = buffer.readVarInt();
+				ResourceLocation itemId = wishType == 0 ? buffer.readResourceLocation() : null;
+				int count = wishType == 0 ? buffer.readVarInt() : 1;
+				String gamerule = wishType == 3 ? buffer.readUtf(64) : "";
+				String gameruleValue = wishType == 3 ? buffer.readUtf(64) : "";
+				ResourceLocation originId = wishType == 1 ? buffer.readResourceLocation() : null;
+				return new MakeWishPayload(wishType, itemId, count, gamerule, gameruleValue, originId);
+			}
+
+			@Override
+			public void encode(RegistryFriendlyByteBuf buffer, MakeWishPayload payload) {
+				buffer.writeVarInt(payload.wishType());
+				if (payload.wishType() == 0) {
+					buffer.writeResourceLocation(payload.itemId());
+					buffer.writeVarInt(payload.count());
+				} else if (payload.wishType() == 1) {
+					buffer.writeResourceLocation(payload.originId());
+				} else if (payload.wishType() == 3) {
+					buffer.writeUtf(payload.gamerule(), 64);
+					buffer.writeUtf(payload.gameruleValue(), 64);
+				}
+			}
+		};
+
+		@Override
+		public Type<? extends CustomPacketPayload> type() {
+			return TYPE;
+		}
 	}
 }

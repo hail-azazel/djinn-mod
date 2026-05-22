@@ -1,24 +1,32 @@
 package com.djinn.effect;
 
 import com.djinn.DjinnOriginMod;
-import net.minecraft.entity.effect.StatusEffect;
-import net.minecraft.entity.effect.StatusEffectCategory;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.Registry;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectCategory;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 public final class ModEffects {
-	public static final StatusEffect SAND_VEIL = new SandVeilEffect();
+	public static final DeferredRegister<MobEffect> EFFECTS = DeferredRegister.create(BuiltInRegistries.MOB_EFFECT, DjinnOriginMod.MOD_ID);
+	public static final DeferredHolder<MobEffect, MobEffect> SAND_VEIL = EFFECTS.register("sand_veil", SandVeilEffect::new);
 
 	private ModEffects() {
 	}
 
-	public static void register() {
-		Registry.register(Registries.STATUS_EFFECT, DjinnOriginMod.id("sand_veil"), SAND_VEIL);
+	public static void register(IEventBus bus) {
+		EFFECTS.register(bus);
 	}
 
-	private static class SandVeilEffect extends StatusEffect {
+	public static Holder<MobEffect> sandVeil() {
+		return SAND_VEIL;
+	}
+
+	private static class SandVeilEffect extends MobEffect {
 		private SandVeilEffect() {
-			super(StatusEffectCategory.BENEFICIAL, 0xD7B15C);
+			super(MobEffectCategory.BENEFICIAL, 0xD7B15C);
 		}
 	}
 }

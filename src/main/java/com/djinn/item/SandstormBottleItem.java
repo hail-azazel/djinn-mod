@@ -2,43 +2,43 @@ package com.djinn.item;
 
 import com.djinn.state.DjinnPlayerData;
 import com.djinn.state.DjinnWorldState;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.TypedActionResult;
-import net.minecraft.world.World;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 
 public class SandstormBottleItem extends Item {
 	private static final int DURATION_TICKS = 20 * 12;
 
-	public SandstormBottleItem(Settings settings) {
-		super(settings);
+	public SandstormBottleItem(Properties properties) {
+		super(properties);
 	}
 
 	@Override
-	public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
-		ItemStack stack = user.getStackInHand(hand);
-		if (!(user instanceof ServerPlayerEntity player)) {
-			return TypedActionResult.success(stack);
+	public InteractionResultHolder<ItemStack> use(Level level, Player user, InteractionHand hand) {
+		ItemStack stack = user.getItemInHand(hand);
+		if (!(user instanceof ServerPlayer player)) {
+			return InteractionResultHolder.success(stack);
 		}
 		DjinnWorldState worldState = DjinnWorldState.get(player.getServer());
-		DjinnPlayerData data = worldState.player(player.getUuid());
+		DjinnPlayerData data = worldState.player(player.getUUID());
 		if (!data.isDjinn()) {
-			player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.45F, 0.55F);
-			player.sendMessage(Text.translatable("message.djinn.not_djinn"), true);
-			return TypedActionResult.fail(stack);
+			player.level().playSound(null, player.blockPosition(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.45F, 0.55F);
+			player.displayClientMessage(Component.translatable("message.djinn.not_djinn"), true);
+			return InteractionResultHolder.fail(stack);
 		}
 		boolean activating = data.sandFormTicks() <= 0;
 		data.setSandFormTicks(activating ? DURATION_TICKS : 0);
-		worldState.markDirty();
-		player.getItemCooldownManager().set(this, 20 * 20);
-		player.getWorld().playSound(null, player.getBlockPos(), activating ? SoundEvents.ENTITY_BLAZE_SHOOT : SoundEvents.BLOCK_SAND_BREAK, SoundCategory.PLAYERS, activating ? 0.7F : 0.65F, activating ? 0.55F : 0.75F);
-		player.getWorld().playSound(null, player.getBlockPos(), activating ? SoundEvents.ENTITY_EVOKER_CAST_SPELL : SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.45F, activating ? 0.7F : 0.45F);
-		return TypedActionResult.success(stack);
+		worldState.setDirty();
+		player.getCooldowns().addCooldown(this, 20 * 20);
+		player.level().playSound(null, player.blockPosition(), activating ? SoundEvents.BLAZE_SHOOT : SoundEvents.SAND_BREAK, SoundSource.PLAYERS, activating ? 0.7F : 0.65F, activating ? 0.55F : 0.75F);
+		player.level().playSound(null, player.blockPosition(), activating ? SoundEvents.EVOKER_CAST_SPELL : SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.45F, activating ? 0.7F : 0.45F);
+		return InteractionResultHolder.success(stack);
 	}
 }

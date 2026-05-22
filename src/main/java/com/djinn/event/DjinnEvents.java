@@ -1,5 +1,6 @@
 package com.djinn.event;
 
+import com.djinn.DjinnOriginMod;
 import com.djinn.block.ModBlocks;
 import com.djinn.command.DjinnCommands;
 import com.djinn.effect.ModEffects;
@@ -8,78 +9,73 @@ import com.djinn.particle.ModParticles;
 import com.djinn.state.DjinnPlayerData;
 import com.djinn.state.DjinnWorldState;
 import com.djinn.state.ScheduledGameruleRevert;
-import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
-import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.block.BedBlock;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.attribute.EntityAttributeInstance;
-import net.minecraft.entity.attribute.EntityAttributeModifier;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.BlockItem;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKey;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import java.util.Iterator;
 import java.util.List;
-import java.util.UUID;
 
 public final class DjinnEvents {
-	private static final UUID DJINN_FLIGHT_MODIFIER_ID = UUID.fromString("c81d1eda-5851-4a2b-a740-a8f26f8c8074");
+	private static final ResourceLocation DJINN_FLIGHT_MODIFIER_ID = DjinnOriginMod.id("creative_flight");
 	private static final float VANILLA_FLY_SPEED = 0.05F;
 	private static final float DJINN_FLY_SPEED = 0.075F;
-	private static final EntityAttributeModifier DJINN_FLIGHT_MODIFIER = new EntityAttributeModifier(
+	private static final AttributeModifier DJINN_FLIGHT_MODIFIER = new AttributeModifier(
 			DJINN_FLIGHT_MODIFIER_ID,
-			"Djinn creative flight",
 			0.35D,
-			EntityAttributeModifier.Operation.MULTIPLY_TOTAL
+			AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL
 	);
 
 	private DjinnEvents() {
 	}
 
 	public static void register() {
-		ServerTickEvents.END_SERVER_TICK.register(DjinnEvents::serverTick);
-		ServerLivingEntityEvents.ALLOW_DAMAGE.register(DjinnEvents::allowDamage);
-		UseBlockCallback.EVENT.register((player, world, hand, hitResult) -> blockSleep(player, world, hand, hitResult.getBlockPos()));
-		ServerPlayerEvents.COPY_FROM.register((oldPlayer, newPlayer, alive) -> {
-			if (!alive && DjinnWorldState.get(newPlayer.getServer()).player(oldPlayer.getUuid()).isDjinn()) {
-				newPlayer.getInventory().clone(oldPlayer.getInventory());
-			}
-		});
-		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> refreshFlight(handler.getPlayer(), DjinnWorldState.get(server).player(handler.getPlayer().getUuid())));
+		NeoForge.EVENT_BUS.addListener(DjinnEvents::serverTick);
+		NeoForge.EVENT_BUS.addListener(DjinnEvents::allowDamage);
+		NeoForge.EVENT_BUS.addListener(DjinnEvents::blockSleep);
+		NeoForge.EVENT_BUS.addListener(DjinnEvents::copyInventoryOnDeath);
+		NeoForge.EVENT_BUS.addListener(DjinnEvents::refreshFlightOnLogin);
 	}
 
-	private static void serverTick(MinecraftServer server) {
+	private static void serverTick(ServerTickEvent.Post event) {
+		MinecraftServer server = event.getServer();
 		DjinnWorldState state = DjinnWorldState.get(server);
 		revertGamerules(server, state);
-		if (server.getTicks() % 40 == 0) {
+		if (server.getTickCount() % 40 == 0) {
 			trackLamps(server, state);
 		}
-		for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-			DjinnPlayerData data = state.player(player.getUuid());
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			DjinnPlayerData data = state.player(player.getUUID());
 			syncOriginsSelection(server, player, data);
 			if (!data.isDjinn()) {
 				removeFlightModifier(player);
@@ -98,7 +94,22 @@ public final class DjinnEvents {
 				tickDesertDive(player, data);
 			}
 		}
-		state.markDirty();
+		state.setDirty();
+	}
+
+	private static void copyInventoryOnDeath(PlayerEvent.Clone event) {
+		if (!event.isWasDeath() || !(event.getEntity() instanceof ServerPlayer newPlayer) || !(event.getOriginal() instanceof ServerPlayer oldPlayer)) {
+			return;
+		}
+		if (DjinnWorldState.get(newPlayer.getServer()).player(oldPlayer.getUUID()).isDjinn()) {
+			newPlayer.getInventory().replaceWith(oldPlayer.getInventory());
+		}
+	}
+
+	private static void refreshFlightOnLogin(PlayerEvent.PlayerLoggedInEvent event) {
+		if (event.getEntity() instanceof ServerPlayer player) {
+			refreshFlight(player, DjinnWorldState.get(player.getServer()).player(player.getUUID()));
+		}
 	}
 
 	private static void trackLamps(MinecraftServer server, DjinnWorldState state) {
@@ -106,7 +117,7 @@ public final class DjinnEvents {
 			if (!data.isDjinn()) {
 				continue;
 			}
-			ServerPlayerEntity owner = server.getPlayerManager().getPlayer(data.playerId());
+			ServerPlayer owner = server.getPlayerList().getPlayer(data.playerId());
 			if (data.pendingLampReturn()) {
 				tryReturnLamp(owner, data, state);
 				continue;
@@ -123,8 +134,8 @@ public final class DjinnEvents {
 		if (data.lampPos() == null || data.lampWorld() == null) {
 			return false;
 		}
-		for (ServerWorld world : server.getWorlds()) {
-			if (world.getRegistryKey().getValue().toString().equals(data.lampWorld()) && world.getBlockState(data.lampPos()).isOf(ModBlocks.MAGIC_LAMP_BLOCK)) {
+		for (ServerLevel level : server.getAllLevels()) {
+			if (level.dimension().location().toString().equals(data.lampWorld()) && level.getBlockState(data.lampPos()).is(ModBlocks.MAGIC_LAMP_BLOCK.get())) {
 				return true;
 			}
 		}
@@ -132,9 +143,9 @@ public final class DjinnEvents {
 	}
 
 	private static boolean isLampInAnyOnlineInventory(MinecraftServer server, DjinnPlayerData data) {
-		for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-			for (int slot = 0; slot < player.getInventory().size(); slot++) {
-				ItemStack stack = player.getInventory().getStack(slot);
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+				ItemStack stack = player.getInventory().getItem(slot);
 				if (isOwnersLamp(stack, data)) {
 					DjinnLampStacks.applyLampRules(stack);
 					return true;
@@ -146,34 +157,40 @@ public final class DjinnEvents {
 
 	private static boolean isOwnersLamp(ItemStack stack, DjinnPlayerData data) {
 		return !stack.isEmpty()
-				&& Registries.ITEM.getId(stack.getItem()).equals(com.djinn.DjinnOriginMod.id("magic_lamp"))
+				&& stack.is(ModBlocks.MAGIC_LAMP.get())
 				&& com.djinn.state.DjinnNbt.owner(stack).map(data.playerId()::equals).orElse(false);
 	}
 
-	private static void tryReturnLamp(ServerPlayerEntity owner, DjinnPlayerData data, DjinnWorldState state) {
+	private static void tryReturnLamp(ServerPlayer owner, DjinnPlayerData data, DjinnWorldState state) {
 		if (owner == null) {
 			return;
 		}
 		ItemStack lamp = DjinnLampStacks.boundLamp(owner, data);
-		if (owner.getInventory().insertStack(lamp)) {
+		if (owner.getInventory().add(lamp)) {
 			data.setPendingLampReturn(false);
-			owner.getWorld().playSound(null, owner.getBlockPos(), SoundEvents.ITEM_ARMOR_EQUIP_GOLD, SoundCategory.PLAYERS, 0.6F, 1.1F);
-			owner.getWorld().playSound(null, owner.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.PLAYERS, 0.5F, 1.25F);
-			state.markDirty();
+			owner.level().playSound(null, owner.blockPosition(), SoundEvents.ARMOR_EQUIP_GOLD.value(), SoundSource.PLAYERS, 0.6F, 1.1F);
+			owner.level().playSound(null, owner.blockPosition(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.5F, 1.25F);
+			state.setDirty();
 		}
 	}
 
-	private static void syncOriginsSelection(MinecraftServer server, ServerPlayerEntity player, DjinnPlayerData data) {
-		if (data.isDjinn() || !FabricLoader.getInstance().isModLoaded("origins") || server.getTicks() % 100 != 0) {
+	private static void syncOriginsSelection(MinecraftServer server, ServerPlayer player, DjinnPlayerData data) {
+		if (data.isDjinn() || !ModList.get().isLoaded("origins") || server.getTickCount() % 100 != 0) {
 			return;
 		}
 		String command = "origin has origin " + player.getGameProfile().getName() + " origins:origin djinn:djinn";
-		if (server.getCommandManager().executeWithPrefix(server.getCommandSource(), command) > 0) {
+		int result;
+		try {
+			result = server.getCommands().getDispatcher().execute(command, server.createCommandSourceStack().withSuppressedOutput());
+		} catch (CommandSyntaxException exception) {
+			return;
+		}
+		if (result > 0) {
 			data.setDjinn(true);
 			DjinnCommands.giveBoundLamp(player, data);
-			player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.BLOCK_BEACON_ACTIVATE, SoundCategory.PLAYERS, 0.65F, 1.35F);
-			player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.PLAYERS, 0.55F, 1.5F);
-			player.sendMessage(Text.translatable("command.djinn.bound", player.getDisplayName()), false);
+			player.level().playSound(null, player.blockPosition(), SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS, 0.65F, 1.35F);
+			player.level().playSound(null, player.blockPosition(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.55F, 1.5F);
+			player.sendSystemMessage(Component.translatable("command.djinn.bound", player.getDisplayName()));
 		}
 	}
 
@@ -183,172 +200,175 @@ public final class DjinnEvents {
 		while (iterator.hasNext()) {
 			ScheduledGameruleRevert revert = iterator.next();
 			if (time >= revert.executeAt()) {
-				server.getCommandManager().executeWithPrefix(server.getCommandSource(), "gamerule " + revert.rule() + " " + revert.previousValue());
-				for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-					player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.PLAYERS, 0.35F, 1.4F);
+				server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), "gamerule " + revert.rule() + " " + revert.previousValue());
+				for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+					player.level().playSound(null, player.blockPosition(), SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.35F, 1.4F);
 				}
 				iterator.remove();
 			}
 		}
 	}
 
-	private static void refreshFlight(ServerPlayerEntity player, DjinnPlayerData data) {
+	private static void refreshFlight(ServerPlayer player, DjinnPlayerData data) {
 		if (!data.isDjinn()) {
 			disableDjinnFlight(player);
 			return;
 		}
 		boolean changed = false;
-		if (!player.getAbilities().allowFlying) {
-			player.getAbilities().allowFlying = true;
+		if (!player.getAbilities().mayfly) {
+			player.getAbilities().mayfly = true;
 			changed = true;
 		}
-		if (Math.abs(player.getAbilities().getFlySpeed() - DJINN_FLY_SPEED) > 0.001F) {
-			player.getAbilities().setFlySpeed(DJINN_FLY_SPEED);
+		if (Math.abs(player.getAbilities().getFlyingSpeed() - DJINN_FLY_SPEED) > 0.001F) {
+			player.getAbilities().setFlyingSpeed(DJINN_FLY_SPEED);
 			changed = true;
 		}
-		EntityAttributeInstance flyingSpeed = player.getAttributeInstance(EntityAttributes.GENERIC_FLYING_SPEED);
+		AttributeInstance flyingSpeed = player.getAttribute(Attributes.FLYING_SPEED);
 		if (flyingSpeed != null && flyingSpeed.getModifier(DJINN_FLIGHT_MODIFIER_ID) == null) {
-			flyingSpeed.addPersistentModifier(DJINN_FLIGHT_MODIFIER);
+			flyingSpeed.addOrReplacePermanentModifier(DJINN_FLIGHT_MODIFIER);
 			changed = true;
 		}
 		if (changed) {
-			player.sendAbilitiesUpdate();
+			player.onUpdateAbilities();
 		}
 	}
 
-	private static void disableDjinnFlight(ServerPlayerEntity player) {
+	private static void disableDjinnFlight(ServerPlayer player) {
 		removeFlightModifier(player);
 		if (!player.isCreative() && !player.isSpectator()) {
-			boolean changed = player.getAbilities().allowFlying || player.getAbilities().flying || Math.abs(player.getAbilities().getFlySpeed() - VANILLA_FLY_SPEED) > 0.001F;
-			player.getAbilities().allowFlying = false;
+			boolean changed = player.getAbilities().mayfly || player.getAbilities().flying || Math.abs(player.getAbilities().getFlyingSpeed() - VANILLA_FLY_SPEED) > 0.001F;
+			player.getAbilities().mayfly = false;
 			player.getAbilities().flying = false;
-			player.getAbilities().setFlySpeed(VANILLA_FLY_SPEED);
+			player.getAbilities().setFlyingSpeed(VANILLA_FLY_SPEED);
 			if (changed) {
-				player.sendAbilitiesUpdate();
+				player.onUpdateAbilities();
 			}
 		}
 	}
 
-	private static void removeFlightModifier(ServerPlayerEntity player) {
-		EntityAttributeInstance flyingSpeed = player.getAttributeInstance(EntityAttributes.GENERIC_FLYING_SPEED);
+	private static void removeFlightModifier(ServerPlayer player) {
+		AttributeInstance flyingSpeed = player.getAttribute(Attributes.FLYING_SPEED);
 		if (flyingSpeed != null && flyingSpeed.getModifier(DJINN_FLIGHT_MODIFIER_ID) != null) {
 			flyingSpeed.removeModifier(DJINN_FLIGHT_MODIFIER_ID);
 		}
 	}
 
-	private static void enforceArmorLimit(ServerPlayerEntity player) {
+	private static void enforceArmorLimit(ServerPlayer player) {
 		dropArmor(player, EquipmentSlot.LEGS);
 		dropArmor(player, EquipmentSlot.FEET);
 	}
 
-	private static void dropArmor(ServerPlayerEntity player, EquipmentSlot slot) {
-		ItemStack stack = player.getEquippedStack(slot);
+	private static void dropArmor(ServerPlayer player, EquipmentSlot slot) {
+		ItemStack stack = player.getItemBySlot(slot);
 		if (!stack.isEmpty()) {
-			player.equipStack(slot, ItemStack.EMPTY);
-			player.dropItem(stack, true);
-			player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.ITEM_ARMOR_EQUIP_LEATHER, SoundCategory.PLAYERS, 0.55F, 0.55F);
-			player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_RESONATE, SoundCategory.PLAYERS, 0.35F, 0.65F);
-			player.sendMessage(Text.translatable("message.djinn.no_leg_armor"), true);
+			player.setItemSlot(slot, ItemStack.EMPTY);
+			player.drop(stack, true);
+			player.level().playSound(null, player.blockPosition(), SoundEvents.ARMOR_EQUIP_LEATHER.value(), SoundSource.PLAYERS, 0.55F, 0.55F);
+			player.level().playSound(null, player.blockPosition(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.35F, 0.65F);
+			player.displayClientMessage(Component.translatable("message.djinn.no_leg_armor"), true);
 		}
 	}
 
-	private static void tickSandForm(ServerPlayerEntity player, DjinnPlayerData data) {
+	private static void tickSandForm(ServerPlayer player, DjinnPlayerData data) {
 		if (data.sandFormTicks() <= 0) {
 			return;
 		}
 		data.tickSandForm();
-		player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, 12, 0, false, false, true));
-		player.addStatusEffect(new StatusEffectInstance(ModEffects.SAND_VEIL, 12, 0, false, false, false));
-		ServerWorld world = player.getServerWorld();
-		spawnTornadoAccents(player, world);
-		if (world.getTime() % 10 != 0) {
+		player.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 12, 0, false, false, true));
+		player.addEffect(new MobEffectInstance(ModEffects.sandVeil(), 12, 0, false, false, false));
+		ServerLevel level = player.serverLevel();
+		spawnTornadoAccents(player, level);
+		if (level.getGameTime() % 10 != 0) {
 			return;
 		}
-		Box area = player.getBoundingBox().expand(3.0);
-		List<LivingEntity> targets = world.getEntitiesByClass(LivingEntity.class, area, entity -> entity != player && entity.isAlive());
+		AABB area = player.getBoundingBox().inflate(3.0);
+		List<LivingEntity> targets = level.getEntitiesOfClass(LivingEntity.class, area, entity -> entity != player && entity.isAlive());
 		for (LivingEntity target : targets) {
-			target.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 60, 1));
-			target.addStatusEffect(new StatusEffectInstance(StatusEffects.BLINDNESS, 45, 0));
-			target.damage(world.getDamageSources().magic(), 1.0F);
+			target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1));
+			target.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 45, 0));
+			target.hurt(level.damageSources().magic(), 1.0F);
 		}
 	}
 
-	private static void spawnTornadoAccents(ServerPlayerEntity player, ServerWorld world) {
-		if (world.getTime() % 3 != 0) {
+	private static void spawnTornadoAccents(ServerPlayer player, ServerLevel level) {
+		if (level.getGameTime() % 3 != 0) {
 			return;
 		}
-		double age = player.age * 0.38D;
+		double age = player.tickCount * 0.38D;
 		for (int layer = 0; layer < 4; layer++) {
 			double height = 0.18D + layer * 0.32D;
 			double radius = 0.35D + layer * 0.13D;
 			double angle = age + layer * 1.35D;
 			double x = player.getX() + Math.cos(angle) * radius;
 			double z = player.getZ() + Math.sin(angle) * radius;
-			world.spawnParticles(ModParticles.SANDSTORM, x, player.getY() + height, z, 1, 0.04, 0.04, 0.04, 0.018);
+			level.sendParticles(ModParticles.SANDSTORM.get(), x, player.getY() + height, z, 1, 0.04, 0.04, 0.04, 0.018);
 			if (layer % 2 == 0) {
-				world.spawnParticles(ModParticles.GOLDEN_SMOKE, x, player.getY() + height, z, 1, 0.025, 0.025, 0.025, 0.01);
+				level.sendParticles(ModParticles.GOLDEN_SMOKE.get(), x, player.getY() + height, z, 1, 0.025, 0.025, 0.025, 0.01);
 			}
 		}
 	}
 
-	private static void tickDesertDive(ServerPlayerEntity player, DjinnPlayerData data) {
+	private static void tickDesertDive(ServerPlayer player, DjinnPlayerData data) {
 		boolean lowHealth = player.getHealth() <= player.getMaxHealth() * 0.25F;
 		boolean active = lowHealth || data.desertDiveToggled() && canDesertDive(player);
 		if (!active) {
 			return;
 		}
-		player.addStatusEffect(new StatusEffectInstance(StatusEffects.INVISIBILITY, 30, 0, true, false, true));
-		player.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 30, lowHealth ? 2 : 1, true, false, true));
-		if (player.getWorld().getTime() % 8 == 0) {
-			player.getServerWorld().spawnParticles(ModParticles.GOLDEN_SMOKE, player.getX(), player.getY() + 0.1, player.getZ(), 8, 0.35, 0.05, 0.35, 0.01);
+		player.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 30, 0, true, false, true));
+		player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 30, lowHealth ? 2 : 1, true, false, true));
+		if (player.level().getGameTime() % 8 == 0) {
+			player.serverLevel().sendParticles(ModParticles.GOLDEN_SMOKE.get(), player.getX(), player.getY() + 0.1, player.getZ(), 8, 0.35, 0.05, 0.35, 0.01);
 		}
-		if (player.getWorld().getTime() % 40 == 0) {
-			player.getWorld().playSound(null, player.getBlockPos(), SoundEvents.BLOCK_SAND_STEP, SoundCategory.PLAYERS, 0.18F, lowHealth ? 1.55F : 1.25F);
+		if (player.level().getGameTime() % 40 == 0) {
+			player.level().playSound(null, player.blockPosition(), SoundEvents.SAND_STEP, SoundSource.PLAYERS, 0.18F, lowHealth ? 1.55F : 1.25F);
 		}
 	}
 
-	private static boolean canDesertDive(ServerPlayerEntity player) {
-		BlockPos pos = player.getBlockPos();
-		boolean hotDryBiome = player.getWorld().getBiome(pos).getKey()
+	private static boolean canDesertDive(ServerPlayer player) {
+		BlockPos pos = player.blockPosition();
+		boolean hotDryBiome = player.level().getBiome(pos).unwrapKey()
 				.map(key -> {
-					String path = key.getValue().getPath();
+					String path = key.location().getPath();
 					return path.contains("desert") || path.contains("badlands") || path.contains("savanna");
 				})
 				.orElse(false);
-		BlockState below = player.getWorld().getBlockState(pos.down());
-		boolean sandyBlock = below.isOf(Blocks.SAND) || below.isOf(Blocks.RED_SAND) || below.isOf(Blocks.SANDSTONE) || below.isOf(Blocks.RED_SANDSTONE);
+		BlockState below = player.level().getBlockState(pos.below());
+		boolean sandyBlock = below.is(Blocks.SAND) || below.is(Blocks.RED_SAND) || below.is(Blocks.SANDSTONE) || below.is(Blocks.RED_SANDSTONE);
 		return sandyBlock || hotDryBiome;
 	}
 
-	private static boolean allowDamage(LivingEntity entity, DamageSource source, float amount) {
-		if (entity instanceof ServerPlayerEntity player) {
-			DjinnPlayerData data = DjinnWorldState.get(player.getServer()).player(player.getUuid());
+	private static void allowDamage(LivingIncomingDamageEvent event) {
+		if (event.getEntity() instanceof ServerPlayer player) {
+			DjinnPlayerData data = DjinnWorldState.get(player.getServer()).player(player.getUUID());
 			if (data.isDjinn() && data.sandFormTicks() > 0) {
-				return false;
+				event.setCanceled(true);
+				return;
 			}
-			Entity attacker = source.getAttacker();
-			if (attacker instanceof ServerPlayerEntity attackerPlayer) {
-				DjinnPlayerData attackerData = DjinnWorldState.get(player.getServer()).player(attackerPlayer.getUuid());
-				if (attackerData.isDjinn() && attackerData.lampMaster() != null && attackerData.lampMaster().equals(player.getUuid())) {
-					return false;
+			DamageSource source = event.getSource();
+			Entity attacker = source.getEntity();
+			if (attacker instanceof ServerPlayer attackerPlayer) {
+				DjinnPlayerData attackerData = DjinnWorldState.get(player.getServer()).player(attackerPlayer.getUUID());
+				if (attackerData.isDjinn() && attackerData.lampMaster() != null && attackerData.lampMaster().equals(player.getUUID())) {
+					event.setCanceled(true);
 				}
 			}
 		}
-		return true;
 	}
 
-	private static ActionResult blockSleep(net.minecraft.entity.player.PlayerEntity player, World world, Hand hand, BlockPos pos) {
-		if (player.isSneaking() && player.getStackInHand(hand).getItem() instanceof BlockItem) {
-			return ActionResult.PASS;
+	private static void blockSleep(PlayerInteractEvent.RightClickBlock event) {
+		Player player = event.getEntity();
+		Level level = event.getLevel();
+		BlockPos pos = event.getPos();
+		if (player.isShiftKeyDown() && player.getItemInHand(event.getHand()).getItem() instanceof BlockItem) {
+			return;
 		}
-		if (!world.isClient && world.getBlockState(pos).getBlock() instanceof BedBlock && player instanceof ServerPlayerEntity serverPlayer) {
-			if (DjinnWorldState.get(serverPlayer.getServer()).player(serverPlayer.getUuid()).isDjinn()) {
-				serverPlayer.sendMessage(Text.translatable("message.djinn.no_sleep"), true);
-				world.playSound(null, pos, SoundEvents.BLOCK_FIRE_EXTINGUISH, SoundCategory.PLAYERS, 0.4F, 0.8F);
-				return ActionResult.FAIL;
+		if (!level.isClientSide && level.getBlockState(pos).getBlock() instanceof BedBlock && player instanceof ServerPlayer serverPlayer) {
+			if (DjinnWorldState.get(serverPlayer.getServer()).player(serverPlayer.getUUID()).isDjinn()) {
+				serverPlayer.displayClientMessage(Component.translatable("message.djinn.no_sleep"), true);
+				level.playSound(null, pos, SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.4F, 0.8F);
+				event.setCancellationResult(InteractionResult.FAIL);
+				event.setCanceled(true);
 			}
 		}
-		return ActionResult.PASS;
 	}
-
 }
